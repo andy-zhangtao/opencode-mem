@@ -11,8 +11,10 @@
 import type { Database } from "../db/database";
 import { searchAll, getTimeline, getFullObservations, getFullSummaries } from "../db/search";
 import { getSessionList, getSessionObservations, getStats, getAllProjects } from "../db/queries";
+import { logger } from "../utils/logger";
 
 const DEFAULT_PORT = 37778;
+const MAX_PORT_ATTEMPTS = 10;
 
 interface HTTPRoute {
   pattern: URLPattern;
@@ -113,7 +115,7 @@ async function handleRequest(req: Request, db: Database): Promise<Response> {
       try {
         return await route.handler(req, db, match);
       } catch (err) {
-        console.error("[HTTP] Route error:", err);
+        logger.error("[HTTP] Route error:", err);
         return errorResponse(String(err), 500);
       }
     }
@@ -121,36 +123,57 @@ async function handleRequest(req: Request, db: Database): Promise<Response> {
   return errorResponse("Not found", 404);
 }
 
-export function startHTTPServer(db: Database, port = DEFAULT_PORT): void {
-  Bun.serve({
-    port,
-    async fetch(req) {
-      const url = new URL(req.url);
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = Bun.serve({
+      port,
+      fetch() {
+        return new Response("checking");
+      },
+    });
+    server.stop();
+    resolve(true);
+  }).catch(() => false);
+}
 
-      // CORS preflight
-      if (req.method === "OPTIONS") {
-        return new Response(null, {
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-          },
-        });
-      }
+export function startHTTPServer(db: Database, startPort = DEFAULT_PORT): number | null {
+  for (let port = startPort; port < startPort + MAX_PORT_ATTEMPTS; port++) {
+    try {
+      Bun.serve({
+        port,
+        async fetch(req) {
+          const url = new URL(req.url);
 
-      // Root path serves viewer UI (if exists)
-      if (url.pathname === "/") {
-        const viewerPath = `${import.meta.dir}/ui/viewer.html`;
-        const file = Bun.file(viewerPath);
-        if (await file.exists()) {
-          return new Response(file, { headers: { "Content-Type": "text/html" } });
-        }
-        return jsonResponse({ name: "opencode-mem", version: "0.1.0", status: "running" });
-      }
+          if (req.method === "OPTIONS") {
+            return new Response(null, {
+              headers: {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+              },
+            });
+          }
 
-      return handleRequest(req, db);
-    },
-  });
+          if (url.pathname === "/") {
+            const viewerPath = `${import.meta.dir}/ui/viewer.html`;
+            const file = Bun.file(viewerPath);
+            if (await file.exists()) {
+              return new Response(file, { headers: { "Content-Type": "text/html" } });
+            }
+            return jsonResponse({ name: "opencode-mem", version: "0.1.0", status: "running" });
+          }
 
-  console.error(`[HTTP] Server started on port ${port}`);
+          return handleRequest(req, db);
+        },
+      });
+
+      logger.info(`[HTTP] Server started on port ${port}`);
+      return port;
+    } catch (err) {
+      logger.debug(`[HTTP] Port ${port} unavailable, trying next...`);
+    }
+  }
+
+  logger.warn("[HTTP] Could not start server on any port, skipping HTTP UI");
+  return null;
 }
