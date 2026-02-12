@@ -62,6 +62,7 @@ export class OpencodeProviderEngine implements ICompressionEngine {
 
     const promptText = buildObservationPrompt(events, context);
     const sessionId = events[0].sessionId;
+    const directory = context.project || this.directory;
     
     debugLog("[opencode-engine] Sending prompt, sessionId:", sessionId, "events:", events.length);
     debugLog("[opencode-engine] promptText length:", promptText.length);
@@ -70,13 +71,13 @@ export class OpencodeProviderEngine implements ICompressionEngine {
       try {
         debugLog("[opencode-engine] Calling session.prompt with:", JSON.stringify({
           sessionId,
-          directory: this.directory,
+          directory,
           promptLength: promptText.length
         }));
         
         const response = await this.client.session.prompt({
           path: { id: sessionId },
-          query: { directory: this.directory },
+          query: { directory },
           body: {
             parts: [{ type: "text", text: promptText }]
           }
@@ -153,12 +154,13 @@ export class OpencodeProviderEngine implements ICompressionEngine {
     context: CompressionContext
   ): Promise<ParsedSummary | null> {
     const promptText = buildSummaryPrompt(sessionId, context);
+    const directory = context.project || this.directory;
     
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const response = await this.client.session.prompt({
           path: { id: sessionId },
-          query: { directory: this.directory },
+          query: { directory },
           body: {
             parts: [{ type: "text", text: promptText }]
           }
