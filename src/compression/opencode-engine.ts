@@ -41,6 +41,12 @@ function isJsonParseError(error: unknown): boolean {
   return false;
 }
 
+function isNotFoundError(error: unknown): boolean {
+  if (!error) return false;
+  const str = String(error).toLowerCase();
+  return str.includes("not found") || str.includes("enoent") || str.includes("resource not found");
+}
+
 export class OpencodeProviderEngine implements ICompressionEngine {
   constructor(private client: any, private directory: string) {}
 
@@ -115,6 +121,11 @@ export class OpencodeProviderEngine implements ICompressionEngine {
         debugLog("[opencode-engine] Parsed observations:", observations.length);
         return observations;
       } catch (error) {
+        if (isNotFoundError(error)) {
+          debugLog("[opencode-engine] Session not found, skipping compression");
+          return [];
+        }
+        
         const isJsonError = isJsonParseError(error);
         
         if (isJsonError && attempt < MAX_RETRIES) {
@@ -167,6 +178,10 @@ export class OpencodeProviderEngine implements ICompressionEngine {
           .join("") || "";
         return parseSummary(content) as ParsedSummary;
       } catch (error) {
+        if (isNotFoundError(error)) {
+          debugLog("[opencode-engine] generateSummary: Session not found, skipping");
+          return null;
+        }
         if (isJsonParseError(error) && attempt < MAX_RETRIES) {
           debugLog(`[opencode-engine] generateSummary: JSON parse error, retrying...`);
           await sleep(RETRY_DELAY_MS);
