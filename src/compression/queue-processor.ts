@@ -11,6 +11,7 @@ import {
   insertObservation,
   getSession,
 } from "../db/queries";
+import { logger } from "../utils/logger";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_RETRIES = 3;
@@ -48,7 +49,7 @@ async function processQueue(
         await processOne(db, engine, record);
       }
     } catch (error) {
-      console.error("[queue-processor] Poll cycle error:", error);
+      logger.error("[queue-processor] Poll cycle error:", error);
     }
 
     await sleep(POLL_INTERVAL_MS);
@@ -84,7 +85,7 @@ async function processOne(
 
     const observations = await engine.compressObservation([event], context);
 
-    console.error(
+    logger.debug(
       `[queue-processor] Record ${record.id}: got ${observations.length} observations`
     );
 
@@ -115,7 +116,7 @@ async function processOne(
       )
       .run(newRetryCount, newStatus, record.id);
 
-    console.error(
+    logger.error(
       `[queue-processor] Compression failed for record ${record.id} (attempt ${newRetryCount}/${MAX_RETRIES}):`,
       error
     );
