@@ -9,12 +9,16 @@ import { buildObservationPrompt, buildSummaryPrompt } from "./prompts";
 import { parseObservations, parseSummary } from "./parser";
 import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
+import { logger } from "../utils/logger";
 
 const LOG_FILE = process.env.HOME + "/.local/share/opencode/opencode-mem/debug.log";
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1000;
 
 function debugLog(...args: any[]) {
+  // Only write to file if logging is enabled via environment variable
+  if (!process.env.OPENCODE_MEM_LOG) return;
+  
   const timestamp = new Date().toISOString();
   const msg = `[${timestamp}] ${args.join(" ")}\n`;
   try {
@@ -89,6 +93,13 @@ export class OpencodeProviderEngine implements ICompressionEngine {
         
         if (response.error) {
           debugLog("[opencode-engine] API error:", response.error);
+          // Silently skip - don't log to console to avoid UI pollution
+          return [];
+        }
+        
+        // Check for nested error in response structure
+        if (response.data?.error) {
+          debugLog("[opencode-engine] Nested API error:", response.data.error);
           return [];
         }
         
