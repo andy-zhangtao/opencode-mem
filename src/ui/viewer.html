@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenCode-Mem Viewer</title>
+  <style>
+    :root {
+      --bg: #0f0f0f;
+      --card-bg: #1a1a1a;
+      --text: #e0e0e0;
+      --text-muted: #888;
+      --accent: #3b82f6;
+      --border: #333;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+    }
+    .header h1 { font-size: 1.25rem; color: var(--accent); }
+    .stats { display: flex; gap: 1.5rem; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 1.5rem; font-weight: bold; }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); }
+    .search-box {
+      flex: 1;
+      max-width: 400px;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+    }
+    .main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .tab {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .tab.active { color: var(--accent); border-color: var(--accent); }
+    .session-list { display: flex; flex-direction: column; gap: 1rem; }
+    .session-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .session-card:hover { border-color: var(--accent); }
+    .session-header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+    .session-id { font-family: monospace; color: var(--accent); }
+    .session-time { color: var(--text-muted); font-size: 0.85rem; }
+    .session-project { color: var(--text-muted); font-size: 0.85rem; }
+    .session-prompt { margin-top: 0.5rem; color: var(--text); }
+    .obs-count { 
+      display: inline-block;
+      background: var(--accent);
+      color: white;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+    }
+    .timeline { display: flex; flex-direction: column; gap: 0.75rem; }
+    .obs-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      border-left: 3px solid var(--accent);
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.1s;
+    }
+    .obs-card:hover { 
+      border-color: var(--accent); 
+      transform: translateX(4px);
+    }
+    .obs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .obs-title { font-weight: 600; }
+    .obs-id { font-family: monospace; font-size: 0.75rem; color: var(--text-muted); }
+    .obs-type { 
+      display: inline-block;
+      font-size: 0.7rem; 
+      color: var(--text-muted);
+      background: rgba(59, 130, 246, 0.2);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+    }
+    .obs-type.tool_use { background: rgba(59, 130, 246, 0.2); }
+    .obs-type.code_change { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+    .obs-type.discovery { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+    .obs-type.decision { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+    .obs-type.error_recovery { background: rgba(239, 68, 68, 0.2); color: var(--error); }
+    .obs-narrative { margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-muted); }
+    .back-btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      margin-bottom: 1rem;
+    }
+    .back-btn:hover { border-color: var(--accent); }
+    .loading { text-align: center; padding: 2rem; color: var(--text-muted); }
+    .error { color: #ef4444; padding: 1rem; background: rgba(239,68,68,0.1); border-radius: 8px; }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s, visibility 0.2s;
+    }
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      max-width: 800px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      transform: scale(0.95);
+      transition: transform 0.2s;
+    }
+    .modal-overlay.active .modal {
+      transform: scale(1);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-title { font-size: 1.25rem; font-weight: 600; }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0.25rem;
+      line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 1.5rem; }
+    .detail-section { margin-bottom: 1.5rem; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .detail-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.05em;
+    }
+    .detail-value {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .tag {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent);
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+    }
+    .file-tag {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--success);
+    }
+    .fact-list { list-style: none; }
+    .fact-list li {
+      position: relative;
+      padding-left: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+    .fact-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+    .meta-row {
+      display: flex;
+      gap: 2rem;
+      padding: 1rem;
+      background: var(--bg);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .meta-item { }
+    .meta-item-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+    .meta-item-value { font-size: 0.9rem; margin-top: 0.25rem; }
+    .raw-text {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>OpenCode-Mem</h1>
+    <div class="stats" id="stats">
+      <div class="stat"><div class="stat-value" id="stat-sessions">-</div><div class="stat-label">Sessions</div></div>
+      <div class="stat"><div class="stat-value" id="stat-observations">-</div><div class="stat-label">Observations</div></div>
+    </div>
+    <input type="text" class="search-box" id="search" placeholder="Search memory...">
+  </header>
+  <main class="main" id="main">
+    <div class="loading">Loading...</div>
+  </main>
+
+  <!-- Detail Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="modal-title">Loading...</div>
+          <div style="margin-top: 0.5rem">
+            <span class="obs-type" id="modal-type">-</span>
+            <span style="margin-left: 0.5rem; color: var(--text-muted); font-size: 0.8rem" id="modal-time"></span>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <div class="loading">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = window.location.origin;
+    let currentView = 'sessions';
+    let currentSessionId = null;
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function loadStats() {
+      try {
+        const stats = await fetchJSON(`${API}/api/stats`);
+        document.getElementById('stat-sessions').textContent = stats.sessions;
+        document.getElementById('stat-observations').textContent = stats.observations;
+      } catch (e) {
+        console.error('Failed to load stats:', e);
+      }
+    }
+
+    async function loadSessions() {
+      const main = document.getElementById('main');
+      main.innerHTML = '<div class="loading">Loading sessions...</div>';
+      
+      try {
+        const data = await fetchJSON(`${API}/api/sessions?limit=50`);
+        
+        if (data.length === 0) {
+          main.innerHTML = '<div class="loading">No sessions found. Start using OpenCode to build memory.</div>';
+          return;
+        }
+
+        main.innerHTML = `
+          <div class="tabs">
+            <div class="tab active">Sessions</div>
+          </div>
+          <div class="session-list">
+            ${data.map(s => `
+              <div class="session-card" onclick="loadTimeline('${s.session_id}')">
+                <div class="session-header">
+                  <span class="session-id">${s.session_id}</span>
+                  <span class="session-time">${new Date(s.created_at * 1000).toLocaleString()}</span>
+                </div>
+                <div class="session-project">${s.project || 'No project'}</div>
+                <div class="session-prompt">${s.user_prompt || 'No prompt'}<span class="obs-count">${s.observation_count} obs</span></div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } catch (e) {
+        main.innerHTML = `<div class="error">Failed to load sessions: ${e.message}</div>`;
+      }
+    }
+
+    async function loadTimeline(sessionId) {
+      const main = document.getElementById('main');
+      currentSessionId = sessionId;
+      main.innerHTML = '<div class="loading">Loading timeline...</div>';
+
+      try {
+        const data = await fetchJSON(`${API}/api/timeline/${sessionId}`);
+        
+        if (data.entries.length === 0) {
+          main.innerHTML = `
+            <button class="back-btn" onclick="loadSessions()">← Back</button>
+            <div class="loading">No observations in this session.</div>
+          `;
+          return;
+        }
+
+        main.innerHTML = `
+          <button class="back-btn" onclick="loadSessions()">← Back</button>
+          <h2 style="margin-bottom:1rem; font-size: 0.9rem; color: var(--text-muted);">${sessionId}</h2>
+          <div class="timeline">
+            ${data.entries.map(o => `
+              <div class="obs-card" onclick="showObservationDetail(${o.id})">
+                <div class="obs-header">
+                  <div class="obs-title">${o.title || 'Untitled'}</div>
+                  <div class="obs-id">#${o.id}</div>
+                </div>
+                <span class="obs-type ${o.type}">${o.type || 'unknown'}</span>
+                ${o.subtitle ? `<div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">${o.subtitle}</div>` : ''}
+                ${o.narrative ? `<div class="obs-narrative">${o.narrative.slice(0, 200)}${o.narrative.length > 200 ? '...' : ''}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } catch (e) {
+        main.innerHTML = `
+          <button class="back-btn" onclick="loadSessions()">← Back</button>
+          <div class="error">Failed to load timeline: ${e.message}</div>
+        `;
+      }
+    }
+
+    async function showObservationDetail(id) {
+      const overlay = document.getElementById('modal-overlay');
+      const title = document.getElementById('modal-title');
+      const type = document.getElementById('modal-type');
+      const time = document.getElementById('modal-time');
+      const body = document.getElementById('modal-body');
+
+      overlay.classList.add('active');
+      title.textContent = 'Loading...';
+      type.textContent = '-';
+      time.textContent = '';
+      body.innerHTML = '<div class="loading">Loading observation...</div>';
+
+      try {
+        const obs = await fetchJSON(`${API}/api/observations/${id}`);
+        
+        title.textContent = obs.title || 'Untitled';
+        type.textContent = obs.type || 'unknown';
+        type.className = `obs-type ${obs.type || ''}`;
+        time.textContent = new Date(obs.created_at * 1000).toLocaleString();
+
+        let factsHtml = '';
+        if (obs.facts) {
+          try {
+            const facts = JSON.parse(obs.facts);
+            if (facts.length > 0) {
+              factsHtml = `
+                <div class="detail-section">
+                  <div class="detail-label">Facts</div>
+                  <ul class="fact-list">
+                    ${facts.map(f => `<li>${escapeHtml(f)}</li>`).join('')}
+                  </ul>
+                </div>
+              `;
+            }
+          } catch {}
+        }
+
+        let conceptsHtml = '';
+        if (obs.concepts) {
+          try {
+            const concepts = JSON.parse(obs.concepts);
+            if (concepts.length > 0) {
+              conceptsHtml = `
+                <div class="detail-section">
+                  <div class="detail-label">Concepts</div>
+                  <div class="tag-list">
+                    ${concepts.map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}
+                  </div>
+                </div>
+              `;
+            }
+          } catch {}
+        }
+
+        let filesReadHtml = '';
+        if (obs.files_read) {
+          try {
+            const files = JSON.parse(obs.files_read);
+            if (files.length > 0) {
+              filesReadHtml = `
+                <div class="detail-section">
+                  <div class="detail-label">Files Read</div>
+                  <div class="tag-list">
+                    ${files.map(f => `<span class="tag file-tag">${escapeHtml(f)}</span>`).join('')}
+                  </div>
+                </div>
+              `;
+            }
+          } catch {}
+        }
+
+        let filesModifiedHtml = '';
+        if (obs.files_modified) {
+          try {
+            const files = JSON.parse(obs.files_modified);
+            if (files.length > 0) {
+              filesModifiedHtml = `
+                <div class="detail-section">
+                  <div class="detail-label">Files Modified</div>
+                  <div class="tag-list">
+                    ${files.map(f => `<span class="tag file-tag">${escapeHtml(f)}</span>`).join('')}
+                  </div>
+                </div>
+              `;
+            }
+          } catch {}
+        }
+
+        body.innerHTML = `
+          <div class="meta-row">
+            <div class="meta-item">
+              <div class="meta-item-label">Session</div>
+              <div class="meta-item-value" style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(obs.session_id || '-')}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-item-label">Project</div>
+              <div class="meta-item-value">${escapeHtml(obs.project || '-')}</div>
+            </div>
+            ${obs.subtitle ? `
+            <div class="meta-item">
+              <div class="meta-item-label">Context</div>
+              <div class="meta-item-value">${escapeHtml(obs.subtitle)}</div>
+            </div>
+            ` : ''}
+          </div>
+
+          ${obs.narrative ? `
+          <div class="detail-section">
+            <div class="detail-label">Narrative</div>
+            <div class="detail-value">${escapeHtml(obs.narrative)}</div>
+          </div>
+          ` : ''}
+
+          ${factsHtml}
+          ${conceptsHtml}
+          ${filesReadHtml}
+          ${filesModifiedHtml}
+
+          ${obs.raw_text ? `
+          <div class="detail-section">
+            <div class="detail-label">Raw Text</div>
+            <div class="raw-text">${escapeHtml(obs.raw_text.slice(0, 2000))}${obs.raw_text.length > 2000 ? '\n... (truncated)' : ''}</div>
+          </div>
+          ` : ''}
+        `;
+      } catch (e) {
+        body.innerHTML = `<div class="error">Failed to load observation: ${e.message}</div>`;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+ .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function search(query) {
+      if (!query.trim()) {
+        loadSessions();
+        return;
+      }
+      
+      const main = document.getElementById('main');
+      main.innerHTML = '<div class="loading">Searching...</div>';
+
+      try {
+        const data = await fetchJSON(`${API}/api/search?q=${encodeURIComponent(query)}&limit=20`);
+        
+        if (data.results.length === 0) {
+          main.innerHTML = '<div class="loading">No results found.</div>';
+          return;
+        }
+
+        main.innerHTML = `
+          <div class="tabs">
+            <div class="tab active">Search Results (${data.total})</div>
+          </div>
+          <div class="session-list">
+            ${data.results.map(r => `
+              <div class="session-card" onclick="showObservationDetail(${r.id})">
+                <div class="session-header">
+                  <span class="session-id">#${r.id}</span>
+                  <span class="session-time">${new Date(r.created_at * 1000).toLocaleString()}</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--accent); margin-bottom: 0.25rem;">${r.type}</div>
+                <div class="session-prompt">${r.title || r.snippet?.slice(0, 100) || 'No content'}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } catch (e) {
+        main.innerHTML = `<div class="error">Search failed: ${e.message}</div>`;
+      }
+    }
+
+    // Event listeners
+    document.getElementById('search').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') search(e.target.value);
+    });
+
+    // Close modal on overlay click
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'modal-overlay') closeModal();
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Initial load
+    loadStats();
+    loadSessions();
+    
+    // Refresh stats every 30s
+    setInterval(loadStats, 30000);
+  </script>
+</body>
+</html>
